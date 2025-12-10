@@ -1,0 +1,127 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// ---------- CONFIGURACIÓN BÁSICA PRISMA 7 ----------
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ---------- ENUMS DE DOMINIO AYNI ----------
+
+enum TipoAyuda {
+  SIEMBRA
+  COSECHA
+  RIEGO
+  LIMPIEZA_CANAL
+  CONSTRUCCION
+  PRESTAMO_HERRAMIENTA
+  PRESTAMO_ANIMAL
+  OTRA
+}
+
+enum Urgencia {
+  BAJA
+  MEDIA
+  ALTA
+}
+
+enum EstadoSolicitud {
+  PENDIENTE
+  PLANIFICADA
+  COMPLETADA
+  CANCELADA
+}
+
+enum EstadoAyuda {
+  PROGRAMADO
+  REALIZADO
+  CANCELADO
+}
+
+// ---------- MODELOS PRINCIPALES ----------
+
+// Comunidad: agrupación de familias (p.ej. comunidad Aymara/Quechua)
+model Comunidad {
+  id        Int       @id @default(autoincrement())
+  nombre    String
+  region    String    // "Altiplano", "Valle", "Yungas", etc.
+  familias  Familia[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// Familia: unidad básica del ayni
+model Familia {
+  id              Int               @id @default(autoincrement())
+  nombre          String
+  comunidadId     Int
+  comunidad       Comunidad         @relation(fields: [comunidadId], references: [id])
+  miembros        Int               // número de personas en la familia
+
+  // para estadísticas de balance de ayni
+  horasDadas      Int               @default(0)
+  horasRecibidas  Int               @default(0)
+
+  // relaciones
+  solicitudes     SolicitudAyuda[]
+  ayudasOrigen    AyudaAsignada[]   @relation("AyudasOrigen")
+  ayudasDestino   AyudaAsignada[]   @relation("AyudasDestino")
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+// Solicitud de ayuda que crea una familia (p.ej. "necesito ayuda en cosecha")
+model SolicitudAyuda {
+  id             Int             @id @default(autoincrement())
+  familiaId      Int
+  familia        Familia         @relation(fields: [familiaId], references: [id])
+
+  tipo           TipoAyuda
+  descripcion    String
+  fechaInicio    DateTime        // desde cuándo se puede ayudar
+  fechaFin       DateTime        // hasta cuándo sigue siendo útil la ayuda
+  horasEstimadas Int
+
+  urgencia       Urgencia        @default(MEDIA)
+  estado         EstadoSolicitud @default(PENDIENTE)
+
+  // una solicitud puede generar una o varias ayudas asignadas
+  ayudas         AyudaAsignada[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+// AyudaAsignada: resultado del plan del Algoritmo Genético
+// quién ayuda a quién, en qué tarea, cuántas horas y cuándo
+model AyudaAsignada {
+  id          Int           @id @default(autoincrement())
+
+  origenId    Int           // familia que ayuda
+  origen      Familia       @relation("AyudasOrigen", fields: [origenId], references: [id])
+
+  destinoId   Int           // familia que recibe la ayuda
+  destino     Familia       @relation("AyudasDestino", fields: [destinoId], references: [id])
+
+  solicitudId Int?
+  solicitud   SolicitudAyuda? @relation(fields: [solicitudId], references: [id])
+
+  tipo        TipoAyuda
+  fecha       DateTime
+  horas       Int
+
+  estado      EstadoAyuda   @default(PROGRAMADO)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
