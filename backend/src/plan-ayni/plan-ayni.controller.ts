@@ -1,4 +1,4 @@
-import { Controller, Post } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { PlanAyniService } from './plan-ayni.service';
 
 @Controller('plan-ayni')
@@ -8,5 +8,10 @@ export class PlanAyniController {
   @Post('generar')
   async generar() {
     return this.planAyniService.generarPlan();
+  }
+
+  @Get('actual')
+  async actual() {
+    return this.planAyniService.obtenerPlanActual();
   }
 }

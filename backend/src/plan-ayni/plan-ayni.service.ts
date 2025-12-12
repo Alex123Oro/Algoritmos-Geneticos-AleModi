@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { lastValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,23 +6,19 @@ import { AyudasService } from '../ayudas/ayudas.service';
 
 @Injectable()
 export class PlanAyniService {
-  private readonly agServiceUrl = 'http://127.0.0.1:8000/optimizar-ayni';
+  private readonly logger = new Logger(PlanAyniService.name);
+  private readonly agServiceUrl = process.env.AG_SERVICE_URL ?? 'http://127.0.0.1:8000/optimizar-ayni';
 
   constructor(
-    private readonly http: HttpService,
     private readonly prisma: PrismaService,
     private readonly ayudasService: AyudasService,
+    private readonly http: HttpService,
   ) {}
 
   async generarPlan() {
-    // 1) Obtener familias
     const familias = await this.prisma.familia.findMany();
-
-    // 2) Obtener solicitudes pendientes
     const solicitudes = await this.prisma.solicitudAyuda.findMany({
-      where: {
-        estado: 'PENDIENTE',
-      },
+      where: { estado: 'PENDIENTE' },
     });
 
     if (!familias.length) {
@@ -33,7 +29,158 @@ export class PlanAyniService {
       throw new BadRequestException('No hay solicitudes PENDIENTE para generar el plan de ayni.');
     }
 
-    // 3) Armar el payload que espera el microservicio Python
+    const plan = await this.generarPlanConMicroservicio(familias, solicitudes).catch((err) => {
+      this.logger.warn(`Fallo el microservicio AG (${err?.message ?? err}), usando heuristica local.`);
+      return this.generarPlanLocal(familias, solicitudes);
+    });
+
+    await this.ayudasService.createBatch({
+      ayudas: plan.ayudas.map((a) => ({
+        origenId: a.origenId,
+        destinoId: a.destinoId,
+        solicitudId: a.solicitudId,
+        tipo: a.tipo,
+        fecha: a.fecha,
+        horas: a.horas,
+      })),
+    });
+
+    if (plan.solicitudesIds.length) {
+      await this.prisma.solicitudAyuda.updateMany({
+        where: { id: { in: plan.solicitudesIds } },
+        data: { estado: 'PLANIFICADA' },
+      });
+    }
+
+    return {
+      mensaje: 'Plan de ayni generado y ayudas registradas correctamente.',
+      totalAyudas: plan.ayudas.length,
+      fitness: plan.fitness,
+      detalleFitness: plan.detalleFitness,
+    };
+  }
+
+  async obtenerPlanActual() {
+    return this.ayudasService.findAll();
+  }
+
+  /**
+   * Generador heuristico: asigna cada solicitud a la familia con mayor balance disponible,
+   * evitando autoasignacion y priorizando la misma comunidad.
+   */
+  private generarPlanLocal(
+    familias: Array<{
+      id: number;
+      nombre: string;
+      comunidadId: number;
+      miembros: number;
+      horasDadas: number;
+      horasRecibidas: number;
+    }>,
+    solicitudes: Array<{
+      id: number;
+      familiaId: number;
+      tipo: string;
+      horasEstimadas: number;
+      fechaInicio: Date;
+    }>,
+  ) {
+    const estado = new Map(
+      familias.map((f) => [
+        f.id,
+        {
+          ...f,
+          balance: f.horasDadas - f.horasRecibidas,
+        },
+      ]),
+    );
+
+    const ayudas: Array<{
+      origenId: number;
+      destinoId: number;
+      solicitudId: number;
+      tipo: string;
+      fecha: Date;
+      horas: number;
+    }> = [];
+
+    for (const solicitud of solicitudes) {
+      const destino = estado.get(solicitud.familiaId);
+      if (!destino) continue;
+
+      const candidatos = familias
+        .filter((f) => f.id !== solicitud.familiaId)
+        .sort((a, b) => {
+          const ea = estado.get(a.id)!;
+          const eb = estado.get(b.id)!;
+          const comunidadScoreA = a.comunidadId === destino.comunidadId ? 1 : 0;
+          const comunidadScoreB = b.comunidadId === destino.comunidadId ? 1 : 0;
+          if (comunidadScoreB !== comunidadScoreA) return comunidadScoreB - comunidadScoreA;
+          if (eb.balance !== ea.balance) return eb.balance - ea.balance;
+          return eb.miembros - ea.miembros;
+        });
+
+      const origen = candidatos[0];
+      if (!origen) continue;
+
+      const horas = solicitud.horasEstimadas;
+      const fecha = solicitud.fechaInicio ?? new Date();
+
+      ayudas.push({
+        origenId: origen.id,
+        destinoId: solicitud.familiaId,
+        solicitudId: solicitud.id,
+        tipo: solicitud.tipo,
+        fecha,
+        horas,
+      });
+
+      const estadoOrigen = estado.get(origen.id)!;
+      estadoOrigen.horasDadas += horas;
+      estadoOrigen.balance += horas;
+
+      destino.horasRecibidas += horas;
+      destino.balance -= horas;
+    }
+
+    const balances = Array.from(estado.values()).map((f) => f.balance);
+    const promedio = balances.reduce((a, b) => a + b, 0) / balances.length;
+    const maxDesbalance = Math.max(...balances.map((b) => Math.abs(b - promedio)));
+    const varianza = balances.reduce((acc, b) => acc + Math.pow(b - promedio, 2), 0) / balances.length;
+    const stdDev = Math.sqrt(varianza);
+
+    return {
+      ayudas,
+      solicitudesIds: Array.from(new Set(ayudas.map((a) => a.solicitudId))),
+      fitness: 1 / (1 + maxDesbalance + stdDev),
+      detalleFitness: {
+        desbalancePromedio: promedio,
+        maxDesbalance,
+        stdDev,
+        generaciones: 1,
+      },
+    };
+  }
+
+  private async generarPlanConMicroservicio(
+    familias: Array<{
+      id: number;
+      nombre: string;
+      comunidadId: number;
+      miembros: number;
+      horasDadas: number;
+      horasRecibidas: number;
+    }>,
+    solicitudes: Array<{
+      id: number;
+      familiaId: number;
+      tipo: string;
+      horasEstimadas: number;
+      urgencia: string;
+      fechaInicio: Date;
+      fechaFin: Date;
+    }>,
+  ) {
     const payload = {
       familias: familias.map((f) => ({
         id: f.id,
@@ -48,59 +195,44 @@ export class PlanAyniService {
         familiaId: s.familiaId,
         tipo: s.tipo,
         horasEstimadas: s.horasEstimadas,
-        urgencia: s.urgencia,
+        urgencia: (s as any).urgencia ?? 'MEDIA',
         fechaInicio: s.fechaInicio.toISOString(),
         fechaFin: s.fechaFin.toISOString(),
       })),
       parametros: {
         tamanoPoblacion: 30,
         maxGeneraciones: 50,
+        probCruzamiento: 0.7,
+        probMutacion: 0.1,
+        pesoEquilibrio: 0.5,
+        pesoCobertura: 0.3,
+        pesoCarga: 0.2,
+        maxHorasPorFamilia: null,
       },
     };
 
-    // 4) Llamar al microservicio Python
     const response = await lastValueFrom(
-      this.http.post(this.agServiceUrl, payload),
+      this.http.post(this.agServiceUrl, payload, { timeout: 10000 }),
     );
 
-    const { ayudas, fitness, detalleFitness } = response.data;
+    const { ayudas, fitness, detalleFitness } = response.data ?? {};
 
-    if (!ayudas || !Array.isArray(ayudas) || !ayudas.length) {
-      throw new BadRequestException(
-        'El servicio de optimización no devolvió ayudas válidas.',
-      );
+    if (!Array.isArray(ayudas) || !ayudas.length) {
+      throw new BadRequestException('El microservicio AG no devolvio ayudas validas.');
     }
 
-    // 5) Guardar las ayudas en la BD usando AyudasService (batch)
-    await this.ayudasService.createBatch({
+    return {
       ayudas: ayudas.map((a: any) => ({
         origenId: a.origenId,
         destinoId: a.destinoId,
         solicitudId: a.solicitudId,
         tipo: a.tipo,
-        fecha: a.fecha, // string ISO -> Prisma lo acepta como Date
+        fecha: new Date(a.fecha),
         horas: a.horas,
       })),
-    });
-
-    // 6) (Opcional) Marcar las solicitudes como PLANIFICADA
-    const solicitudesIds = Array.from(
-      new Set(ayudas.map((a: any) => a.solicitudId)),
-    );
-
-    if (solicitudesIds.length) {
-      await this.prisma.solicitudAyuda.updateMany({
-        where: { id: { in: solicitudesIds } },
-        data: { estado: 'PLANIFICADA' },
-      });
-    }
-
-    // 7) Devolver al frontend un resumen
-    return {
-      mensaje: 'Plan de ayni generado y ayudas registradas correctamente.',
-      totalAyudas: ayudas.length,
-      fitness,
-      detalleFitness,
+      solicitudesIds: Array.from(new Set(ayudas.map((a: any) => a.solicitudId))),
+      fitness: fitness ?? 0,
+      detalleFitness: detalleFitness ?? {},
     };
   }
 }

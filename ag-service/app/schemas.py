@@ -1,6 +1,6 @@
-from typing import List, Optional
-from pydantic import BaseModel
 from datetime import datetime
+from typing import List, Optional
+from pydantic import BaseModel, Field
 
 
 class FamiliaIn(BaseModel):
@@ -23,8 +23,15 @@ class SolicitudIn(BaseModel):
 
 
 class ParametrosAG(BaseModel):
-    tamanoPoblacion: int = 30
-    maxGeneraciones: int = 50
+    tamanoPoblacion: int = Field(30, ge=2)
+    maxGeneraciones: int = Field(50, ge=1)
+    probCruzamiento: float = Field(0.7, ge=0.0, le=1.0)
+    probMutacion: float = Field(0.1, ge=0.0, le=1.0)
+    pesoEquilibrio: float = Field(0.5, ge=0.0)
+    pesoCobertura: float = Field(0.3, ge=0.0)
+    pesoCarga: float = Field(0.2, ge=0.0)
+    maxHorasPorFamilia: Optional[float] = Field(None, ge=0.0)
+    seed: Optional[int] = None
 
 
 class OptimizarAyniRequest(BaseModel):
@@ -46,6 +53,9 @@ class DetalleFitness(BaseModel):
     equilibrioAyni: float
     coberturaSolicitudes: float
     cargaMaximaPorFamilia: float
+    maxDesbalance: float
+    stdDevBalance: float
+    generaciones: int
 
 
 class OptimizarAyniResponse(BaseModel):

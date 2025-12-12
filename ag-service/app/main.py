@@ -1,13 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .schemas import OptimizarAyniRequest, OptimizarAyniResponse
+from .schemas import OptimizarAyniRequest, OptimizarAyniResponse, ParametrosAG
 from .ag_engine import optimizar_ayni
 
 app = FastAPI(
-    title="AYNI-PLUS-AG - Servicio de Algoritmo Genético",
-    version="0.1.0",
-    description="Microservicio para optimizar planes de ayni usando Algoritmos Genéticos (versión inicial).",
+    title="AYNI-PLUS-AG - Servicio de Algoritmo Genetico",
+    version="0.2.0",
+    description="Microservicio para optimizar planes de ayni usando Algoritmos Geneticos.",
 )
 
 app.add_middleware(
@@ -21,18 +21,17 @@ app.add_middleware(
 
 @app.post("/optimizar-ayni", response_model=OptimizarAyniResponse)
 def optimizar_ayni_endpoint(payload: OptimizarAyniRequest):
-    familias = payload.familias
-    solicitudes = payload.solicitudes
-    parametros = payload.parametros or {}
+    if not payload.familias:
+        raise HTTPException(status_code=400, detail="No hay familias en la peticion.")
+    if not payload.solicitudes:
+        raise HTTPException(status_code=400, detail="No hay solicitudes en la peticion.")
 
-    tamano = parametros.tamanoPoblacion if parametros else 30
-    generaciones = parametros.maxGeneraciones if parametros else 50
+    params = payload.parametros or ParametrosAG()
 
     ayudas, fitness, detalle = optimizar_ayni(
-        familias=familias,
-        solicitudes=solicitudes,
-        tamano_poblacion=tamano,
-        max_generaciones=generaciones,
+        familias=payload.familias,
+        solicitudes=payload.solicitudes,
+        parametros=params,
     )
 
     return OptimizarAyniResponse(

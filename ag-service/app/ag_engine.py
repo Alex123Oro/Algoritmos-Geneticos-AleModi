@@ -1,106 +1,255 @@
-from typing import List, Tuple
-from datetime import datetime
+import math
 import random
-import numpy as np
+from datetime import datetime, timedelta
+from typing import Dict, List, Sequence, Tuple
 
-from .schemas import FamiliaIn, SolicitudIn, AyudaOut, DetalleFitness
-
-
-def calcular_balance(familias: List[FamiliaIn]) -> float:
-    if not familias:
-        return 0.0
-
-    balances = np.array([f.horasDadas - f.horasRecibidas for f in familias], dtype=float)
-    desvio = np.std(balances)
-    score = 1.0 / (1.0 + desvio)
-    return float(score)
+from .schemas import AyudaOut, DetalleFitness, FamiliaIn, SolicitudIn, ParametrosAG
 
 
-def construir_plan_simple(
-    familias: List[FamiliaIn],
-    solicitudes: List[SolicitudIn],
+def _clamp(val: float, min_v: float, max_v: float) -> float:
+    return max(min_v, min(val, max_v))
+
+
+def _random_date(start: datetime, end: datetime) -> datetime:
+    if end <= start:
+        return start
+    delta = end - start
+    offset = random.random() * delta.total_seconds()
+    return start + timedelta(seconds=offset)
+
+
+def _candidatos_para_solicitud(solicitud: SolicitudIn, familias: Sequence[FamiliaIn]) -> List[FamiliaIn]:
+    destino_id = solicitud.familiaId
+    destino = next((f for f in familias if f.id == destino_id), None)
+    mismas = [f for f in familias if f.id != destino_id and (destino and f.comunidadId == destino.comunidadId)]
+    otras = [f for f in familias if f.id != destino_id and (not destino or f.comunidadId != destino.comunidadId)]
+    return mismas or otras
+
+
+def _construir_individuo(
+    familias: Sequence[FamiliaIn],
+    solicitudes: Sequence[SolicitudIn],
+    max_horas_por_familia: float | None,
 ) -> List[AyudaOut]:
-    if not familias or not solicitudes:
-        return []
-
-    prioridad_urgencia = {"ALTA": 3, "MEDIA": 2, "BAJA": 1}
-
-    solicitudes_ordenadas = sorted(
-        solicitudes,
-        key=lambda s: prioridad_urgencia.get(s.urgencia.upper(), 1),
-        reverse=True,
-    )
-
-    familias_dict = {f.id: f for f in familias}
-
+    horas_asignadas: Dict[int, float] = {}
     ayudas: List[AyudaOut] = []
 
-    for sol in solicitudes_ordenadas:
-        familia_destino_id = sol.familiaId
+    for sol in solicitudes:
+        candidatos = _candidatos_para_solicitud(sol, familias)
+        if not candidatos:
+            continue
+        random.shuffle(candidatos)
+        elegido = None
+        for cand in candidatos:
+            horas_actuales = horas_asignadas.get(cand.id, 0)
+            if max_horas_por_familia is not None and horas_actuales + sol.horasEstimadas > max_horas_por_familia:
+                continue
+            elegido = cand
+            break
+        if elegido is None:
+            elegido = candidatos[0]
 
-        candidatas = [f for f in familias_dict.values() if f.id != familia_destino_id]
-        if not candidatas:
-            candidatas = [familias_dict[familia_destino_id]]
-
-        candidatas = sorted(
-            candidatas,
-            key=lambda f: (f.horasRecibidas - f.horasDadas),
-            reverse=True,
+        fecha = _random_date(sol.fechaInicio, sol.fechaFin)
+        ayudas.append(
+            AyudaOut(
+                origenId=elegido.id,
+                destinoId=sol.familiaId,
+                solicitudId=sol.id,
+                tipo=sol.tipo,
+                fecha=fecha,
+                horas=sol.horasEstimadas,
+            )
         )
-
-        origen = candidatas[0]
-
-        rango_mitad = sol.fechaInicio + (sol.fechaFin - sol.fechaInicio) / 2
-
-        ayuda = AyudaOut(
-            origenId=origen.id,
-            destinoId=familia_destino_id,
-            solicitudId=sol.id,
-            tipo=sol.tipo,
-            fecha=rango_mitad,
-            horas=sol.horasEstimadas,
-        )
-        ayudas.append(ayuda)
-
-        origen.horasDadas += sol.horasEstimadas
+        horas_asignadas[elegido.id] = horas_asignadas.get(elegido.id, 0) + sol.horasEstimadas
 
     return ayudas
+
+
+def _fitness(
+    familias: Sequence[FamiliaIn],
+    solicitudes: Sequence[SolicitudIn],
+    individuo: Sequence[AyudaOut],
+    pesos: Tuple[float, float, float],
+    max_horas_por_familia: float | None,
+) -> Tuple[float, DetalleFitness]:
+    peso_eq, peso_cov, peso_carga = pesos
+    horas_dadas: Dict[int, float] = {f.id: float(f.horasDadas) for f in familias}
+    horas_recibidas: Dict[int, float] = {f.id: float(f.horasRecibidas) for f in familias}
+
+    penalizacion = 0.0
+
+    for ayuda in individuo:
+        horas_dadas[ayuda.origenId] = horas_dadas.get(ayuda.origenId, 0) + ayuda.horas
+        horas_recibidas[ayuda.destinoId] = horas_recibidas.get(ayuda.destinoId, 0) + ayuda.horas
+        sol = next((s for s in solicitudes if s.id == ayuda.solicitudId), None)
+        if sol:
+            if ayuda.fecha < sol.fechaInicio or ayuda.fecha > sol.fechaFin:
+                penalizacion += 0.05
+        if max_horas_por_familia is not None and horas_dadas.get(ayuda.origenId, 0) > max_horas_por_familia:
+            penalizacion += 0.05
+
+    balances = []
+    for f in familias:
+        bal = horas_dadas.get(f.id, 0) - horas_recibidas.get(f.id, 0)
+        balances.append(bal)
+
+    if balances:
+        promedio = sum(balances) / len(balances)
+        varianza = sum((b - promedio) ** 2 for b in balances) / len(balances)
+        std_dev = math.sqrt(varianza)
+        max_desbalance = max(abs(b - promedio) for b in balances)
+        score_eq = 1.0 / (1.0 + std_dev)
+    else:
+        std_dev = 0.0
+        max_desbalance = 0.0
+        score_eq = 1.0
+
+    total_solicitudes = len(solicitudes)
+    solicitudes_cubiertas = len({a.solicitudId for a in individuo})
+    score_cov = solicitudes_cubiertas / total_solicitudes if total_solicitudes else 0.0
+
+    horas_por_familia = list(horas_dadas.values())
+    total_horas = sum(horas_por_familia)
+    if total_horas > 0:
+        max_horas = max(horas_por_familia)
+        score_carga = _clamp(1.0 - (max_horas / total_horas), 0.0, 1.0)
+    else:
+        max_horas = 0.0
+        score_carga = 1.0
+
+    denominador = max(peso_eq + peso_cov + peso_carga, 1e-6)
+    fitness = (peso_eq * score_eq + peso_cov * score_cov + peso_carga * score_carga) / denominador
+    fitness = max(fitness - penalizacion, 0.0)
+
+    detalle = DetalleFitness(
+        equilibrioAyni=score_eq,
+        coberturaSolicitudes=score_cov,
+        cargaMaximaPorFamilia=score_carga,
+        maxDesbalance=max_desbalance,
+        stdDevBalance=std_dev,
+        generaciones=0,
+    )
+    return fitness, detalle
+
+
+def _seleccionar_padre(poblacion: Sequence[Tuple[List[AyudaOut], float]]) -> List[AyudaOut]:
+    torneo = random.sample(poblacion, k=min(3, len(poblacion)))
+    torneo_ordenado = sorted(torneo, key=lambda x: x[1], reverse=True)
+    return torneo_ordenado[0][0]
+
+
+def _crossover(p1: Sequence[AyudaOut], p2: Sequence[AyudaOut]) -> List[AyudaOut]:
+    hijo = []
+    max_len = max(len(p1), len(p2))
+    for i in range(max_len):
+        if i < len(p1) and i < len(p2):
+            gene = p1[i] if random.random() < 0.5 else p2[i]
+        elif i < len(p1):
+            gene = p1[i]
+        else:
+            gene = p2[i]
+        hijo.append(gene)
+    return hijo
+
+
+def _mutar(
+    individuo: List[AyudaOut],
+    familias: Sequence[FamiliaIn],
+    solicitudes: Sequence[SolicitudIn],
+    prob_mutacion: float,
+) -> List[AyudaOut]:
+    nuevo = []
+    for gene in individuo:
+        if random.random() < prob_mutacion:
+            sol = next((s for s in solicitudes if s.id == gene.solicitudId), None)
+            if sol:
+                candidatos = _candidatos_para_solicitud(sol, familias)
+                if candidatos:
+                    nuevo_origen = random.choice(candidatos)
+                    gene = AyudaOut(
+                        origenId=nuevo_origen.id,
+                        destinoId=gene.destinoId,
+                        solicitudId=gene.solicitudId,
+                        tipo=gene.tipo,
+                        fecha=_random_date(sol.fechaInicio, sol.fechaFin),
+                        horas=gene.horas,
+                    )
+        nuevo.append(gene)
+    return nuevo
 
 
 def optimizar_ayni(
     familias: List[FamiliaIn],
     solicitudes: List[SolicitudIn],
-    tamano_poblacion: int = 30,
-    max_generaciones: int = 50,
+    parametros: ParametrosAG,
 ) -> Tuple[List[AyudaOut], float, DetalleFitness]:
-    ayudas = construir_plan_simple(familias, solicitudes)
+    if parametros.seed is not None:
+        random.seed(parametros.seed)
 
-    equilibrio = calcular_balance(familias)
+    if not familias:
+        return [], 0.0, DetalleFitness(
+            equilibrioAyni=0.0,
+            coberturaSolicitudes=0.0,
+            cargaMaximaPorFamilia=0.0,
+            maxDesbalance=0.0,
+            stdDevBalance=0.0,
+            generaciones=0,
+        )
 
-    total_solicitudes = len(solicitudes)
-    solicitudes_cubiertas = len({a.solicitudId for a in ayudas}) if ayudas else 0
-    cobertura = (
-        solicitudes_cubiertas / total_solicitudes if total_solicitudes > 0 else 0.0
+    poblacion: List[List[AyudaOut]] = [
+        _construir_individuo(familias, solicitudes, parametros.maxHorasPorFamilia)
+        for _ in range(parametros.tamanoPoblacion)
+    ]
+
+    poblacion_eval: List[Tuple[List[AyudaOut], float, DetalleFitness]] = []
+
+    mejor_individuo: List[AyudaOut] = []
+    mejor_fit = -1.0
+    mejor_detalle = None
+
+    pesos = (
+        parametros.pesoEquilibrio,
+        parametros.pesoCobertura,
+        parametros.pesoCarga,
     )
 
-    horas_por_familia = {}
-    for a in ayudas:
-        horas_por_familia[a.origenId] = horas_por_familia.get(a.origenId, 0) + a.horas
+    for gen in range(parametros.maxGeneraciones):
+        poblacion_eval = []
+        for ind in poblacion:
+            fit, det = _fitness(familias, solicitudes, ind, pesos, parametros.maxHorasPorFamilia)
+            poblacion_eval.append((ind, fit, det))
+            if fit > mejor_fit:
+                mejor_fit = fit
+                mejor_individuo = ind
+                mejor_detalle = det
+                mejor_detalle = DetalleFitness(**mejor_detalle.dict(), generaciones=gen + 1)
 
-    max_horas = max(horas_por_familia.values()) if horas_por_familia else 0
-    total_horas = sum(horas_por_familia.values()) if horas_por_familia else 0
+        poblacion_eval.sort(key=lambda x: x[1], reverse=True)
+        elite = poblacion_eval[0][0]
+        nueva_pob: List[List[AyudaOut]] = [elite]
 
-    if total_horas > 0:
-        carga_maxima = 1.0 - (max_horas / total_horas)
-    else:
-        carga_maxima = 1.0
+        while len(nueva_pob) < parametros.tamanoPoblacion:
+            padre1 = _seleccionar_padre([(i, f) for i, f, _ in poblacion_eval])
+            padre2 = _seleccionar_padre([(i, f) for i, f, _ in poblacion_eval])
 
-    fitness = float((equilibrio + cobertura + carga_maxima) / 3.0)
+            if random.random() < parametros.probCruzamiento:
+                hijo = _crossover(padre1, padre2)
+            else:
+                hijo = list(padre1)
 
-    detalle = DetalleFitness(
-        equilibrioAyni=equilibrio,
-        coberturaSolicitudes=cobertura,
-        cargaMaximaPorFamilia=carga_maxima,
-    )
+            hijo = _mutar(hijo, familias, solicitudes, parametros.probMutacion)
+            nueva_pob.append(hijo)
 
-    return ayudas, fitness, detalle
+        poblacion = nueva_pob
+
+    if mejor_detalle is None:
+        mejor_detalle = DetalleFitness(
+            equilibrioAyni=0.0,
+            coberturaSolicitudes=0.0,
+            cargaMaximaPorFamilia=0.0,
+            maxDesbalance=0.0,
+            stdDevBalance=0.0,
+            generaciones=parametros.maxGeneraciones,
+        )
+
+    return mejor_individuo, mejor_fit, mejor_detalle
