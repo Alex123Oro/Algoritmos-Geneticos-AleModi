@@ -1,0 +1,203 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { api, API_URL } from '../api';
+import './admin.css';
+import AdminTopbar from './components/AdminTopbar';
+import AdminSidebar, { type View } from './components/AdminSidebar';
+import ResumenView, { type CardItem } from './views/ResumenView';
+import PlanView from './views/PlanView';
+import ComunidadView, { type ComunidadStats } from './views/ComunidadView';
+import type { AyudaAsignada, Comunidad, Familia, PlanResponse, SolicitudAyuda } from '../types';
+
+function formatDate(value: string | Date) {
+  const date = new Date(value);
+  return date.toLocaleDateString('es-BO', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+function AdminApp() {
+  const [view, setView] = useState<View>('resumen');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const [comunidades, setComunidades] = useState<Comunidad[]>([]);
+  const [familias, setFamilias] = useState<Familia[]>([]);
+  const [familiaId, setFamiliaId] = useState<number | null>(null);
+  const [solicitudes, setSolicitudes] = useState<SolicitudAyuda[]>([]);
+  const [ayudas, setAyudas] = useState<AyudaAsignada[]>([]);
+  const [plan, setPlan] = useState<PlanResponse | null>(null);
+
+  const showError = (msg: string) => {
+    setError(msg);
+    setTimeout(() => setError(null), 3500);
+  };
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const loadComunidades = async () => {
+    try {
+      const data = await api<Comunidad[]>('/comunidades');
+      setComunidades(data);
+    } catch (err) {
+      showError((err as Error).message);
+    }
+  };
+
+  const loadFamilias = async () => {
+    try {
+      const data = await api<Familia[]>('/familias');
+      setFamilias(data);
+      if (!familiaId && data.length) {
+        setFamiliaId(data[0].id);
+      }
+    } catch (err) {
+      showError((err as Error).message);
+    }
+  };
+
+  const loadSolicitudes = async () => {
+    try {
+      setBusy(true);
+      const data = await api<SolicitudAyuda[]>('/solicitudes');
+      setSolicitudes(data);
+    } catch (err) {
+      showError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadAyudas = async () => {
+    try {
+      setBusy(true);
+      const data = await api<AyudaAsignada[]>('/ayudas');
+      setAyudas(data);
+    } catch (err) {
+      showError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadComunidades();
+    void loadFamilias();
+    void loadSolicitudes();
+    void loadAyudas();
+  }, []);
+
+  const comunidadName = useMemo(
+    () => Object.fromEntries(comunidades.map((c) => [c.id, c.nombre])),
+    [comunidades],
+  );
+
+  const familiaSeleccionada = useMemo(
+    () => familias.find((f) => f.id === familiaId) ?? familias[0] ?? null,
+    [familias, familiaId],
+  );
+
+  const ayudasPorFamilia = useMemo(() => {
+    if (!familiaSeleccionada) return { doy: [] as AyudaAsignada[], recibo: [] as AyudaAsignada[] };
+    return {
+      doy: ayudas.filter((a) => a.origenId === familiaSeleccionada.id),
+      recibo: ayudas.filter((a) => a.destinoId === familiaSeleccionada.id),
+    };
+  }, [ayudas, familiaSeleccionada]);
+
+  const statsComunidad: ComunidadStats = useMemo(() => {
+    const totalFamilias = familias.length;
+    const totalSolicitudes = solicitudes.length;
+    const pendientes = solicitudes.filter((s) => s.estado === 'PENDIENTE').length;
+    const totalAyudas = ayudas.length;
+    const horasDadas = familias.reduce((acc, f) => acc + (f.horasDadas ?? 0), 0);
+    const horasRecibidas = familias.reduce((acc, f) => acc + (f.horasRecibidas ?? 0), 0);
+    return { totalFamilias, totalSolicitudes, pendientes, totalAyudas, horasDadas, horasRecibidas };
+  }, [familias, solicitudes, ayudas]);
+
+  const generarPlan = async () => {
+    try {
+      setBusy(true);
+      const res = await api<PlanResponse>('/plan-ayni/generar', { method: 'POST' });
+      setPlan(res);
+      showToast('Plan generado');
+      await Promise.all([loadAyudas(), loadSolicitudes(), loadFamilias()]);
+    } catch (err) {
+      showError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cardsResumen = (): CardItem[] => {
+    const horasDadas = familiaSeleccionada?.horasDadas ?? 0;
+    const horasRecibidas = familiaSeleccionada?.horasRecibidas ?? 0;
+    const balance = horasDadas - horasRecibidas;
+    const balanceTexto =
+      balance > 0
+        ? `Ha dado ${balance}h más de lo que ha recibido.`
+        : balance < 0
+          ? `Ha recibido ${Math.abs(balance)}h más de lo que ha dado.`
+          : 'Equilibrio perfecto de ayni.';
+
+    return [
+      { title: 'Horas de ayuda dadas', main: `${horasDadas} h`, sub: 'Trabajo ofrecido a otras familias.' },
+      { title: 'Horas de ayuda recibidas', main: `${horasRecibidas} h`, sub: 'Apoyo que la comunidad le ha devuelto.' },
+      { title: 'Balance de ayni', main: `${balance > 0 ? `+${balance}` : balance} h`, sub: balanceTexto },
+      {
+        title: 'Recursos compartidos',
+        main: `${familiaSeleccionada?.miembros ?? 0} miembros`,
+        sub: `Comunidad: ${familiaSeleccionada?.comunidad?.nombre ?? comunidadName[familiaSeleccionada?.comunidadId ?? 0] ?? '—'}`,
+      },
+    ];
+  };
+
+  const solicitudesPendientes = solicitudes.filter((s) => s.estado === 'PENDIENTE');
+
+  return (
+    <div className="app-shell">
+      <AdminTopbar
+        apiUrl={API_URL}
+        familyName={familiaSeleccionada ? familiaSeleccionada.nombre : 'Familia no seleccionada'}
+      />
+
+      {toast && <div className="toast success" style={{ margin: '8px 16px' }}>{toast}</div>}
+      {error && <div className="toast error" style={{ margin: '8px 16px' }}>{error}</div>}
+
+      <div className="main-layout">
+        <AdminSidebar
+          familias={familias}
+          selectedId={familiaSeleccionada?.id ?? null}
+          comunidadName={comunidadName}
+          view={view}
+          onChangeView={setView}
+          onSelectFamilia={setFamiliaId}
+        />
+
+        <main className="content">
+          {view === 'resumen' && (
+            <ResumenView cards={cardsResumen()} ayudasOrigen={ayudasPorFamilia.doy} formatDate={formatDate} />
+          )}
+
+          {view === 'plan' && (
+            <PlanView
+              ayudas={ayudas}
+              plan={plan}
+              busy={busy}
+              onRefresh={() => void loadAyudas()}
+              onGenerate={() => void generarPlan()}
+              formatDate={formatDate}
+            />
+          )}
+
+          {view === 'comunidad' && (
+            <ComunidadView stats={statsComunidad} solicitudesPendientes={solicitudesPendientes} />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export default AdminApp;
