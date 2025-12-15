@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, API_URL } from '../api';
 import './admin.css';
 import AdminTopbar from './components/AdminTopbar';
@@ -7,13 +7,14 @@ import ResumenView, { type CardItem } from './views/ResumenView';
 import PlanView from './views/PlanView';
 import ComunidadView, { type ComunidadStats } from './views/ComunidadView';
 import type { AyudaAsignada, Comunidad, Familia, PlanResponse, SolicitudAyuda } from '../types';
+import type { Session } from '../auth';
 
 function formatDate(value: string | Date) {
   const date = new Date(value);
   return date.toLocaleDateString('es-BO', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
-function AdminApp() {
+function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
   const [view, setView] = useState<View>('resumen');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +161,7 @@ function AdminApp() {
       <AdminTopbar
         apiUrl={API_URL}
         familyName={familiaSeleccionada ? familiaSeleccionada.nombre : 'Familia no seleccionada'}
+        onLogout={onLogout}
       />
 
       {toast && <div className="toast success" style={{ margin: '8px 16px' }}>{toast}</div>}

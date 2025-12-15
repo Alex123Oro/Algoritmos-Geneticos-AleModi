@@ -80,12 +80,22 @@ const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, 
         </div>
         <div className="card">
           <h3>Equilibrio</h3>
-          <div className="card-main">{plan.detalleFitness.equilibrioAyni.toFixed(3)}</div>
+          <div className="card-main">
+            {typeof plan.detalleFitness.equilibrioAyni === 'number'
+              ? plan.detalleFitness.equilibrioAyni.toFixed(3)
+              : typeof plan.detalleFitness.maxDesbalance === 'number'
+                ? (1 / (1 + plan.detalleFitness.maxDesbalance)).toFixed(3)
+                : 'N/D'}
+          </div>
           <div className="card-sub">Equidad entre familias.</div>
         </div>
         <div className="card">
           <h3>Cobertura</h3>
-          <div className="card-main">{plan.detalleFitness.coberturaSolicitudes.toFixed(3)}</div>
+          <div className="card-main">
+            {typeof plan.detalleFitness.coberturaSolicitudes === 'number'
+              ? plan.detalleFitness.coberturaSolicitudes.toFixed(3)
+              : 'N/D'}
+          </div>
           <div className="card-sub">Porcentaje de solicitudes cubiertas.</div>
         </div>
       </div>

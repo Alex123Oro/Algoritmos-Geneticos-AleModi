@@ -5,9 +5,10 @@ interface Props {
   familia?: Familia | null;
   familias: Familia[];
   onChangeFamilia: (id: number) => void;
+  onLogout?: () => void;
 }
 
-const ClientHeader: React.FC<Props> = ({ familia, familias, onChangeFamilia }) => {
+const ClientHeader: React.FC<Props> = ({ familia, familias, onChangeFamilia, onLogout }) => {
   const comunidadLabel = familia?.comunidad?.nombre ?? 'Sin comunidad';
   const regionLabel = familia?.comunidad?.region ? ` · Región ${familia.comunidad.region}` : '';
 
@@ -19,7 +20,14 @@ const ClientHeader: React.FC<Props> = ({ familia, familias, onChangeFamilia }) =
           Comunidad: {comunidadLabel}
           {regionLabel}
         </p>
-        <span className="client-chip">Vista cliente · AYNI-PLUS-AG</span>
+        <div className="client-chip-row">
+          <span className="client-chip">Vista cliente · AYNI-PLUS-AG</span>
+          {onLogout && (
+            <button type="button" className="client-btn-secondary" onClick={onLogout}>
+              Salir
+            </button>
+          )}
+        </div>
       </div>
 
       {familias.length > 1 && (

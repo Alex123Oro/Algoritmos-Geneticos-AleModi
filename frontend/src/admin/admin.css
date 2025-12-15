@@ -385,3 +385,10 @@ body {
 .text-muted {
   color: #6b7280;
 }
+
+.btn-logout {
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: transparent;
+  color: white;
+  cursor: pointer;
+}

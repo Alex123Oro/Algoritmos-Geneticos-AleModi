@@ -1,13 +1,20 @@
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001';
 
-type Options = RequestInit & { json?: unknown };
+type Options = RequestInit & { json?: unknown; authToken?: string };
+
+function resolveToken(token?: string) {
+  const stored = localStorage.getItem('ayni_token');
+  return token ?? stored ?? null;
+}
 
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
-  const { json, headers, ...rest } = options;
+  const { json, headers, authToken, ...rest } = options;
+  const token = resolveToken(authToken);
 
   const res = await fetch(`${API_URL}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers || {}),
     },
     ...(json ? { body: JSON.stringify(json) } : {}),

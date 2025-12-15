@@ -60,8 +60,18 @@ export interface PlanResponse {
   totalAyudas: number;
   fitness: number;
   detalleFitness: {
-    equilibrioAyni: number;
-    coberturaSolicitudes: number;
-    cargaMaximaPorFamilia: number;
+    equilibrioAyni?: number;
+    coberturaSolicitudes?: number;
+    cargaMaximaPorFamilia?: number;
+    maxDesbalance?: number;
+    stdDevBalance?: number;
+    generaciones?: number;
+    [key: string]: unknown;
   };
+}
+
+export interface LoginResponse {
+  token: string;
+  role: string;
+  familiaId?: number | null;
 }

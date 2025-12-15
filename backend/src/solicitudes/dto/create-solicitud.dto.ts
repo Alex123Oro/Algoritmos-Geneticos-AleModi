@@ -1,22 +1,43 @@
-// Coinciden con los enums de Prisma: TipoAyuda, Urgencia, EstadoSolicitud
-export type TipoAyuda =
-  | 'SIEMBRA'
-  | 'COSECHA'
-  | 'RIEGO'
-  | 'LIMPIEZA_CANAL'
-  | 'CONSTRUCCION'
-  | 'PRESTAMO_HERRAMIENTA'
-  | 'PRESTAMO_ANIMAL'
-  | 'OTRA';
+import { IsDateString, IsIn, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
 
-export type Urgencia = 'BAJA' | 'MEDIA' | 'ALTA';
+// Coinciden con los enums de Prisma: TipoAyuda, Urgencia, EstadoSolicitud
+export const TipoAyudaValores = [
+  'SIEMBRA',
+  'COSECHA',
+  'RIEGO',
+  'LIMPIEZA_CANAL',
+  'CONSTRUCCION',
+  'PRESTAMO_HERRAMIENTA',
+  'PRESTAMO_ANIMAL',
+  'OTRA',
+] as const;
+export type TipoAyuda = (typeof TipoAyudaValores)[number];
+
+export const UrgenciaValores = ['BAJA', 'MEDIA', 'ALTA'] as const;
+export type Urgencia = (typeof UrgenciaValores)[number];
 
 export class CreateSolicitudDto {
-  familiaId: number;     // quién pide la ayuda
-  tipo: TipoAyuda;       // tipo de tarea
-  descripcion: string;   // breve descripción
-  fechaInicio: Date;     // desde cuándo se necesita ayuda
-  fechaFin: Date;        // hasta cuándo sigue siendo útil
+  @IsInt()
+  @Min(1)
+  familiaId: number; // quien pide la ayuda
+
+  @IsIn(TipoAyudaValores)
+  tipo: TipoAyuda; // tipo de tarea
+
+  @IsString()
+  @IsNotEmpty()
+  descripcion: string; // breve descripción
+
+  @IsDateString()
+  fechaInicio: Date; // desde cuándo se necesita ayuda
+
+  @IsDateString()
+  fechaFin: Date; // hasta cuándo sigue siendo útil
+
+  @IsInt()
+  @Min(1)
   horasEstimadas: number;
-  urgencia: Urgencia;    // BAJA, MEDIA, ALTA
+
+  @IsIn(UrgenciaValores)
+  urgencia: Urgencia; // BAJA, MEDIA, ALTA
 }

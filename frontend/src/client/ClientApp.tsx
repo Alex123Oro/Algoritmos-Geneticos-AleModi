@@ -8,6 +8,7 @@ import SummaryCards from './components/SummaryCards';
 import TabSwitcher from './components/TabSwitcher';
 import { estadoAyudaLabels, tipoAyudaLabels } from './constants';
 import './client.css';
+import type { Session } from '../auth';
 
 type Tab = 'doy' | 'recibo';
 
@@ -35,14 +36,17 @@ function mapAyudaToItem(ayuda: AyudaAsignada, tab: Tab): HelpItem {
   };
 }
 
-const ClientApp: React.FC = () => {
+const ClientApp: React.FC<{ onLogout?: () => void; session?: Session }> = ({ onLogout, session }) => {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const initialFamiliaId = useMemo(() => {
     const raw = params.get('familiaId');
-    if (!raw) return undefined;
-    const parsed = Number(raw);
-    return Number.isNaN(parsed) ? undefined : parsed;
-  }, [params]);
+    if (raw) {
+      const parsed = Number(raw);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    if (session?.familiaId) return session.familiaId;
+    return undefined;
+  }, [params, session]);
 
   const [familias, setFamilias] = useState<Familia[]>([]);
   const [familiaId, setFamiliaId] = useState<number | null>(initialFamiliaId ?? null);
@@ -66,11 +70,22 @@ const ClientApp: React.FC = () => {
 
   const loadFamilias = async () => {
     try {
-      const data = await api<Familia[]>('/familias');
-      setFamilias(data);
-      if (!familiaId && data.length) {
-        setFamiliaId(data[0].id);
+      if (session?.role === 'ADMIN') {
+        const data = await api<Familia[]>('/familias');
+        setFamilias(data);
+        if (!familiaId && data.length) {
+          setFamiliaId(data[0].id);
+        }
+        return;
       }
+      // Rol familia: solo su propia familia
+      if (!session?.familiaId) {
+        showBanner('error', 'No se pudo determinar la familia del usuario.');
+        return;
+      }
+      const data = await api<Familia>(`/familias/${session.familiaId}`);
+      setFamilias([data]);
+      setFamiliaId(session.familiaId);
     } catch (err) {
       showBanner('error', (err as Error).message);
     }
@@ -155,6 +170,7 @@ const ClientApp: React.FC = () => {
           familia={familiaSeleccionada}
           familias={familias}
           onChangeFamilia={(id) => setFamiliaId(id)}
+          onLogout={onLogout}
         />
 
         <main className="client-main">
