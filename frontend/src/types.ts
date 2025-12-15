@@ -33,8 +33,8 @@ export interface SolicitudAyuda {
   familiaId: number;
   tipo: TipoAyuda;
   descripcion: string;
-  fechaInicio: string;
-  fechaFin: string;
+  fechaInicio?: string;
+  fechaFin?: string;
   horasEstimadas: number;
   urgencia: Urgencia;
   estado: EstadoSolicitud;
@@ -55,19 +55,17 @@ export interface AyudaAsignada {
   solicitud?: SolicitudAyuda;
 }
 
+export interface PlanComunidad {
+  comunidadId: number;
+  totalAyudas: number;
+  fitness?: number;
+  detalleFitness?: Record<string, unknown>;
+}
+
 export interface PlanResponse {
   mensaje: string;
   totalAyudas: number;
-  fitness: number;
-  detalleFitness: {
-    equilibrioAyni?: number;
-    coberturaSolicitudes?: number;
-    cargaMaximaPorFamilia?: number;
-    maxDesbalance?: number;
-    stdDevBalance?: number;
-    generaciones?: number;
-    [key: string]: unknown;
-  };
+  comunidades: PlanComunidad[];
 }
 
 export interface LoginResponse {

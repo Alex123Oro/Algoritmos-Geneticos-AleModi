@@ -131,6 +131,32 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
     }
   };
 
+  const completarProgramadas = async () => {
+    try {
+      setBusy(true);
+      await api<{ completadas: number }>('/ayudas/simulacion/completar-programadas', { method: 'POST' });
+      showToast('Ayudas programadas marcadas como realizadas');
+      await Promise.all([loadAyudas(), loadFamilias()]);
+    } catch (err) {
+      showError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const crearComunidad = async (payload: { nombre: string; region: string }) => {
+    try {
+      setBusy(true);
+      await api('/comunidades', { method: 'POST', json: payload });
+      showToast('Comunidad creada');
+      await loadComunidades();
+    } catch (err) {
+      showError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const cardsResumen = (): CardItem[] => {
     const horasDadas = familiaSeleccionada?.horasDadas ?? 0;
     const horasRecibidas = familiaSeleccionada?.horasRecibidas ?? 0;
@@ -189,12 +215,17 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
               busy={busy}
               onRefresh={() => void loadAyudas()}
               onGenerate={() => void generarPlan()}
+              onSimulate={() => void completarProgramadas()}
               formatDate={formatDate}
             />
           )}
 
           {view === 'comunidad' && (
-            <ComunidadView stats={statsComunidad} solicitudesPendientes={solicitudesPendientes} />
+            <ComunidadView
+              stats={statsComunidad}
+              solicitudesPendientes={solicitudesPendientes}
+              onCreateComunidad={(data) => void crearComunidad(data)}
+            />
           )}
         </main>
       </div>

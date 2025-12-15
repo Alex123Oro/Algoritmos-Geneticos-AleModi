@@ -2,14 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSolicitudDto } from './dto/create-solicitud.dto';
 import { UpdateEstadoSolicitudDto } from './dto/update-estado-solicitud.dto';
+import { BadRequestException } from '@nestjs/common';
 
 @Injectable()
 export class SolicitudesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(data: CreateSolicitudDto) {
+  async create(data: CreateSolicitudDto) {
+    const familia = await this.prisma.familia.findUnique({ where: { id: data.familiaId } });
+    if (!familia) {
+      throw new BadRequestException('Familia no encontrada');
+    }
+    const ahora = new Date();
     return this.prisma.solicitudAyuda.create({
-      data,
+      data: {
+        ...data,
+        fechaInicio: data.fechaInicio ?? ahora,
+        fechaFin: data.fechaFin ?? ahora,
+      },
     });
   }
 

@@ -5,6 +5,7 @@ import { PlanAyniController } from './plan-ayni.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AyudasModule } from '../ayudas/ayudas.module';
 import { AyudasService } from '../ayudas/ayudas.service';
+import { PlanAyniAutoRunner } from './plan-ayni.autorunner';
 
 @Module({
   imports: [
@@ -13,6 +14,6 @@ import { AyudasService } from '../ayudas/ayudas.service';
     AyudasModule,
   ],
   controllers: [PlanAyniController],
-  providers: [PlanAyniService, AyudasService],
+  providers: [PlanAyniService, AyudasService, PlanAyniAutoRunner],
 })
 export class PlanAyniModule {}

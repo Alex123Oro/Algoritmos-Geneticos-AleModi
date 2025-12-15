@@ -5,8 +5,6 @@ import { tipoAyudaOptions, urgenciaOptions } from '../constants';
 export interface HelpRequestValues {
   tipo: TipoAyuda | '';
   descripcion: string;
-  fechaInicio: string;
-  fechaFin: string;
   horasEstimadas: string;
   urgencia: Urgencia | '';
 }
@@ -21,19 +19,9 @@ interface Props {
 
 const RequestHelpSheet: React.FC<Props> = ({ open, onClose, onSubmit, busy, familiaNombre }) => {
   const defaultForm = useMemo(() => {
-    const toInput = (date: Date) => {
-      const offset = date.getTimezoneOffset() * 60000;
-      return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-    };
-    const start = new Date();
-    const end = new Date();
-    end.setHours(end.getHours() + 3);
-
     return {
       tipo: '' as const,
       descripcion: '',
-      fechaInicio: toInput(start),
-      fechaFin: toInput(end),
       horasEstimadas: '2',
       urgencia: 'MEDIA' as const,
     };
@@ -98,24 +86,6 @@ const RequestHelpSheet: React.FC<Props> = ({ open, onClose, onSubmit, busy, fami
                 </option>
               ))}
             </select>
-          </label>
-
-          <label>
-            <span>Fecha inicio</span>
-            <input
-              type="datetime-local"
-              value={form.fechaInicio}
-              onChange={(e) => setForm((prev) => ({ ...prev, fechaInicio: e.target.value }))}
-            />
-          </label>
-
-          <label>
-            <span>Fecha fin</span>
-            <input
-              type="datetime-local"
-              value={form.fechaFin}
-              onChange={(e) => setForm((prev) => ({ ...prev, fechaFin: e.target.value }))}
-            />
           </label>
 
           <label>

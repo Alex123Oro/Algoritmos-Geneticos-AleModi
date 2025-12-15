@@ -7,16 +7,21 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { SolicitudesService } from './solicitudes.service';
 import { CreateSolicitudDto } from './dto/create-solicitud.dto';
 import { UpdateEstadoSolicitudDto } from './dto/update-estado-solicitud.dto';
+import { Roles } from '../auth/roles.decorator';
+import { FamiliaGuard } from '../auth/familia.guard';
 
 @Controller('solicitudes')
 export class SolicitudesController {
   constructor(private readonly solicitudesService: SolicitudesService) {}
 
   @Post()
+  @Roles('FAMILIA', 'ADMIN')
+  @UseGuards(FamiliaGuard)
   create(@Body() dto: CreateSolicitudDto) {
     return this.solicitudesService.create(dto);
   }

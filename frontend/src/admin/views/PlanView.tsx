@@ -7,10 +7,11 @@ interface Props {
   busy: boolean;
   onRefresh: () => void;
   onGenerate: () => void;
+  onSimulate: () => void;
   formatDate: (value: string | Date) => string;
 }
 
-const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, formatDate }) => (
+const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, onSimulate, formatDate }) => (
   <section>
     <div className="content-header">
       <div className="content-header-title">
@@ -28,6 +29,9 @@ const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, 
         <button className="btn btn-outline" onClick={onRefresh}>
           Refrescar
         </button>
+        <button className="btn btn-outline" onClick={onSimulate} disabled={busy}>
+          {busy ? 'Procesando…' : 'Completar programadas'}
+        </button>
         <button className="btn btn-primary" onClick={onGenerate} disabled={busy}>
           {busy ? 'Generando…' : 'Generar plan'}
         </button>
@@ -37,7 +41,7 @@ const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, 
     <table className="table mt-sm">
       <thead>
         <tr>
-          <th>Día</th>
+          <th>Fecha</th>
           <th>Quien ayuda</th>
           <th>A quién</th>
           <th>Tarea</th>
@@ -73,31 +77,15 @@ const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, 
           <div className="card-main">{plan.totalAyudas}</div>
           <div className="card-sub">Cantidad en el último plan generado.</div>
         </div>
-        <div className="card">
-          <h3>Fitness</h3>
-          <div className="card-main">{plan.fitness.toFixed(3)}</div>
-          <div className="card-sub">Calidad de la solución del AG.</div>
-        </div>
-        <div className="card">
-          <h3>Equilibrio</h3>
-          <div className="card-main">
-            {typeof plan.detalleFitness.equilibrioAyni === 'number'
-              ? plan.detalleFitness.equilibrioAyni.toFixed(3)
-              : typeof plan.detalleFitness.maxDesbalance === 'number'
-                ? (1 / (1 + plan.detalleFitness.maxDesbalance)).toFixed(3)
-                : 'N/D'}
+        {plan.comunidades.map((c) => (
+          <div className="card" key={c.comunidadId}>
+            <h3>Comunidad {c.comunidadId}</h3>
+            <div className="card-main">{c.totalAyudas} ayudas</div>
+            <div className="card-sub">
+              Fitness: {typeof c.fitness === 'number' ? c.fitness.toFixed(3) : 'N/D'}
+            </div>
           </div>
-          <div className="card-sub">Equidad entre familias.</div>
-        </div>
-        <div className="card">
-          <h3>Cobertura</h3>
-          <div className="card-main">
-            {typeof plan.detalleFitness.coberturaSolicitudes === 'number'
-              ? plan.detalleFitness.coberturaSolicitudes.toFixed(3)
-              : 'N/D'}
-          </div>
-          <div className="card-sub">Porcentaje de solicitudes cubiertas.</div>
-        </div>
+        ))}
       </div>
     )}
   </section>

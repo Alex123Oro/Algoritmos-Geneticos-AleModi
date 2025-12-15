@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 
 // Coinciden con los enums de Prisma: TipoAyuda, Urgencia, EstadoSolicitud
 export const TipoAyudaValores = [
@@ -28,11 +28,11 @@ export class CreateSolicitudDto {
   @IsNotEmpty()
   descripcion: string; // breve descripción
 
-  @IsDateString()
-  fechaInicio: Date; // desde cuándo se necesita ayuda
+  @IsOptional()
+  fechaInicio?: Date; // opcional en modo sin fechas
 
-  @IsDateString()
-  fechaFin: Date; // hasta cuándo sigue siendo útil
+  @IsOptional()
+  fechaFin?: Date; // opcional en modo sin fechas
 
   @IsInt()
   @Min(1)

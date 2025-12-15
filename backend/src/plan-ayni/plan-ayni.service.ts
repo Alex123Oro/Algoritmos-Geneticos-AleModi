@@ -16,26 +16,49 @@ export class PlanAyniService {
   ) {}
 
   async generarPlan() {
-    const familias = await this.prisma.familia.findMany();
-    const solicitudes = await this.prisma.solicitudAyuda.findMany({
-      where: { estado: 'PENDIENTE' },
-    });
+    const comunidades = await this.prisma.comunidad.findMany();
+    const planesComunidad: Array<{
+      comunidadId: number;
+      ayudas: any[];
+      solicitudesIds: number[];
+      fitness: number;
+      detalleFitness: any;
+    }> = [];
 
-    if (!familias.length) {
-      throw new BadRequestException('No hay familias registradas para generar el plan de ayni.');
+    for (const comunidad of comunidades) {
+      const familias = await this.prisma.familia.findMany({
+        where: { comunidadId: comunidad.id },
+      });
+      const solicitudes = await this.prisma.solicitudAyuda.findMany({
+        where: { estado: 'PENDIENTE', familia: { comunidadId: comunidad.id } },
+      });
+
+      if (!familias.length || !solicitudes.length) {
+        continue;
+      }
+
+      const plan = await this.generarPlanConMicroservicio(familias, solicitudes).catch((err) => {
+        this.logger.warn(
+          `Fallo el microservicio AG para comunidad ${comunidad.id} (${err?.message ?? err}), usando heuristica local.`,
+        );
+        return this.generarPlanLocal(familias, solicitudes);
+      });
+
+      planesComunidad.push({
+        comunidadId: comunidad.id,
+        ayudas: plan.ayudas,
+        solicitudesIds: plan.solicitudesIds,
+        fitness: plan.fitness,
+        detalleFitness: plan.detalleFitness,
+      });
     }
 
-    if (!solicitudes.length) {
+    if (!planesComunidad.length) {
       throw new BadRequestException('No hay solicitudes PENDIENTE para generar el plan de ayni.');
     }
 
-    const plan = await this.generarPlanConMicroservicio(familias, solicitudes).catch((err) => {
-      this.logger.warn(`Fallo el microservicio AG (${err?.message ?? err}), usando heuristica local.`);
-      return this.generarPlanLocal(familias, solicitudes);
-    });
-
-    await this.ayudasService.createBatch({
-      ayudas: plan.ayudas.map((a) => ({
+    const todasAyudas = planesComunidad.flatMap((p) =>
+      p.ayudas.map((a) => ({
         origenId: a.origenId,
         destinoId: a.destinoId,
         solicitudId: a.solicitudId,
@@ -43,20 +66,37 @@ export class PlanAyniService {
         fecha: a.fecha,
         horas: a.horas,
       })),
+    );
+
+    await this.ayudasService.createBatch({
+      ayudas: todasAyudas,
     });
 
-    if (plan.solicitudesIds.length) {
+    const autoCompleteOnPlan =
+      (process.env.AUTO_COMPLETE_ON_PLAN ?? 'true').toLowerCase() === 'true';
+    if (autoCompleteOnPlan) {
+      await this.ayudasService.completarProgramadas();
+    }
+
+    const todasSolicitudes = Array.from(
+      new Set(planesComunidad.flatMap((p) => p.solicitudesIds)),
+    );
+    if (todasSolicitudes.length) {
       await this.prisma.solicitudAyuda.updateMany({
-        where: { id: { in: plan.solicitudesIds } },
+        where: { id: { in: todasSolicitudes } },
         data: { estado: 'PLANIFICADA' },
       });
     }
 
     return {
       mensaje: 'Plan de ayni generado y ayudas registradas correctamente.',
-      totalAyudas: plan.ayudas.length,
-      fitness: plan.fitness,
-      detalleFitness: plan.detalleFitness,
+      totalAyudas: todasAyudas.length,
+      comunidades: planesComunidad.map((p) => ({
+        comunidadId: p.comunidadId,
+        totalAyudas: p.ayudas.length,
+        fitness: p.fitness,
+        detalleFitness: p.detalleFitness,
+      })),
     };
   }
 

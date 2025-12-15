@@ -14,15 +14,12 @@ const Login: React.FC<Props> = ({ onSuccess }) => {
   const [nombreFamilia, setNombreFamilia] = useState('');
   const [miembros, setMiembros] = useState('');
   const [comunidadId, setComunidadId] = useState('');
-  const [comunidadNueva, setComunidadNueva] = useState(false);
-  const [comunidadNombre, setComunidadNombre] = useState('');
-  const [comunidadRegion, setComunidadRegion] = useState('');
   const [comunidades, setComunidades] = useState<Comunidad[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (mode === 'register' && !comunidadNueva) {
+    if (mode === 'register') {
       void api<Comunidad[]>('/comunidades')
         .then((data) => {
           setComunidades(data);
@@ -30,7 +27,7 @@ const Login: React.FC<Props> = ({ onSuccess }) => {
         })
         .catch((err) => setError((err as Error).message));
     }
-  }, [mode, comunidadId, comunidadNueva]);
+  }, [mode, comunidadId]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,16 +42,9 @@ const Login: React.FC<Props> = ({ onSuccess }) => {
         setError('Completa nombre de familia y número de miembros.');
         return;
       }
-      if (comunidadNueva) {
-        if (!comunidadNombre || !comunidadRegion) {
-          setError('Completa nombre y región de la nueva comunidad.');
-          return;
-        }
-      } else {
-        if (!comunidadId || Number.isNaN(Number(comunidadId))) {
-          setError('Selecciona una comunidad.');
-          return;
-        }
+      if (!comunidadId || Number.isNaN(Number(comunidadId))) {
+        setError('Selecciona una comunidad existente (solo admin puede crear comunidades).');
+        return;
       }
     }
     try {
@@ -69,9 +59,7 @@ const Login: React.FC<Props> = ({ onSuccess }) => {
                 password,
                 nombreFamilia,
                 miembros: Number(miembros),
-                comunidadId: comunidadNueva ? undefined : Number(comunidadId),
-                comunidadNombre: comunidadNueva ? comunidadNombre : undefined,
-                comunidadRegion: comunidadNueva ? comunidadRegion : undefined,
+                comunidadId: Number(comunidadId),
               },
             });
       saveSession({ token: res.token, role: res.role, familiaId: res.familiaId ?? null });
@@ -105,7 +93,7 @@ const Login: React.FC<Props> = ({ onSuccess }) => {
         <p className="login-subtitle">
           {mode === 'login'
             ? 'Usa tus credenciales (ADMIN o FAMILIA).'
-            : 'Crea la cuenta de tu familia con sus datos básicos.'}
+            : 'Crea la cuenta de tu familia en una comunidad existente.'}
         </p>
         <form onSubmit={submit} className="login-form">
           <label>
@@ -123,55 +111,22 @@ const Login: React.FC<Props> = ({ onSuccess }) => {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="********"
             />
           </label>
           {mode === 'register' && (
             <>
-              <label className="login-toggle">
-                <input
-                  type="checkbox"
-                  checked={comunidadNueva}
-                  onChange={(e) => setComunidadNueva(e.target.checked)}
-                />
-                Crear nueva comunidad
+              <label>
+                Comunidad (elige una existente)
+                <select value={comunidadId} onChange={(e) => setComunidadId(e.target.value)}>
+                  <option value="">Selecciona</option>
+                  {comunidades.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre} ({c.region})
+                    </option>
+                  ))}
+                </select>
               </label>
-              {comunidadNueva ? (
-                <>
-                  <label>
-                    Nombre de la comunidad
-                    <input
-                      type="text"
-                      value={comunidadNombre}
-                      onChange={(e) => setComunidadNombre(e.target.value)}
-                      placeholder="Comunidad Andina"
-                    />
-                  </label>
-                  <label>
-                    Región
-                    <select value={comunidadRegion} onChange={(e) => setComunidadRegion(e.target.value)}>
-                      <option value="">Selecciona</option>
-                      {['Altiplano', 'Valles', 'Chaco', 'Yungas', 'Amazonía', 'Otra'].map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </>
-              ) : (
-                <label>
-                  Comunidad
-                  <select value={comunidadId} onChange={(e) => setComunidadId(e.target.value)}>
-                    <option value="">Selecciona</option>
-                    {comunidades.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nombre} ({c.region})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
               <label>
                 Nombre de la familia
                 <input

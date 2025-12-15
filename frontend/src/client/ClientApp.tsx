@@ -12,24 +12,17 @@ import type { Session } from '../auth';
 
 type Tab = 'doy' | 'recibo';
 
-function formatDate(iso: string) {
-  const date = new Date(iso);
-  return date.toLocaleDateString('es-BO', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-  });
-}
-
 function mapAyudaToItem(ayuda: AyudaAsignada, tab: Tab): HelpItem {
   const isDoy = tab === 'doy';
-  const otherFamily = isDoy ? ayuda.destino?.nombre ?? `Familia ${ayuda.destinoId}` : ayuda.origen?.nombre ?? `Familia ${ayuda.origenId}`;
+  const otherFamily = isDoy
+    ? ayuda.destino?.nombre ?? `Familia ${ayuda.destinoId}`
+    : ayuda.origen?.nombre ?? `Familia ${ayuda.origenId}`;
   const badge = estadoAyudaLabels[ayuda.estado] ?? ayuda.estado;
 
   return {
     id: ayuda.id,
     title: tipoAyudaLabels[ayuda.tipo] ?? ayuda.tipo,
-    subtitle: `${isDoy ? 'Para' : 'De'}: ${otherFamily} · ${formatDate(ayuda.fecha)}`,
+    subtitle: `${isDoy ? 'Para' : 'De'}: ${otherFamily} · Estado: ${badge}`,
     meta: `${ayuda.horas}h`,
     badge,
     tone: isDoy ? 'estado' : 'recibir',
@@ -78,7 +71,6 @@ const ClientApp: React.FC<{ onLogout?: () => void; session?: Session }> = ({ onL
         }
         return;
       }
-      // Rol familia: solo su propia familia
       if (!session?.familiaId) {
         showBanner('error', 'No se pudo determinar la familia del usuario.');
         return;
@@ -123,8 +115,8 @@ const ClientApp: React.FC<{ onLogout?: () => void; session?: Session }> = ({ onL
       return;
     }
 
-    if (!values.tipo || !values.descripcion || !values.fechaInicio || !values.fechaFin) {
-      showBanner('error', 'Completa todos los campos.');
+    if (!values.tipo || !values.descripcion) {
+      showBanner('error', 'Completa tipo y descripción.');
       return;
     }
 
@@ -142,8 +134,6 @@ const ClientApp: React.FC<{ onLogout?: () => void; session?: Session }> = ({ onL
           familiaId: familiaSeleccionada.id,
           tipo: values.tipo as TipoAyuda,
           descripcion: values.descripcion,
-          fechaInicio: new Date(values.fechaInicio).toISOString(),
-          fechaFin: new Date(values.fechaFin).toISOString(),
           horasEstimadas: horas,
           urgencia: (values.urgencia || 'MEDIA') as Urgencia,
         },
@@ -193,7 +183,7 @@ const ClientApp: React.FC<{ onLogout?: () => void; session?: Session }> = ({ onL
             <span role="img" aria-label="ayni">
               
             </span>
-            Mi ayni esta semana
+            Mi ayni en este ciclo
           </div>
 
           <TabSwitcher<Tab>

@@ -7,11 +7,14 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AyudasService } from './ayudas.service';
 import { CreateAyudaDto } from './dto/create-ayuda.dto';
 import { CreateAyudaBatchDto } from './dto/create-ayuda-batch.dto';
 import { UpdateEstadoAyudaDto } from './dto/update-estado-ayuda.dto';
+import { Roles } from '../auth/roles.decorator';
+import { FamiliaGuard } from '../auth/familia.guard';
 
 @Controller('ayudas')
 export class AyudasController {
@@ -19,12 +22,14 @@ export class AyudasController {
 
   // Crear una sola ayuda (puede usarse en pruebas o casos manuales)
   @Post()
+  @Roles('ADMIN')
   create(@Body() dto: CreateAyudaDto) {
     return this.ayudasService.create(dto);
   }
 
   // Crear un lote de ayudas (desde el Algoritmo Genético)
   @Post('batch')
+  @Roles('ADMIN')
   createBatch(@Body() dto: CreateAyudaBatchDto) {
     return this.ayudasService.createBatch(dto);
   }
@@ -35,6 +40,8 @@ export class AyudasController {
   // GET /ayudas?familiaId=1&rol=destino
   // GET /ayudas?estado=PROGRAMADO
   @Get()
+  @Roles('ADMIN', 'FAMILIA')
+  @UseGuards(FamiliaGuard)
   findAll(
     @Query('familiaId') familiaId?: string,
     @Query('rol') rol?: 'origen' | 'destino' | 'ambos',
@@ -48,16 +55,26 @@ export class AyudasController {
   }
 
   @Get(':id')
+  @Roles('ADMIN', 'FAMILIA')
+  @UseGuards(FamiliaGuard)
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.ayudasService.findOne(id);
   }
 
   // PATCH /ayudas/5/estado
   @Patch(':id/estado')
+  @Roles('ADMIN')
   updateEstado(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateEstadoAyudaDto,
   ) {
     return this.ayudasService.updateEstado(id, dto);
+  }
+
+  // Ejecuta todas las ayudas PROGRAMADAS (modo simulación)
+  @Post('simulacion/completar-programadas')
+  @Roles('ADMIN')
+  completarProgramadas() {
+    return this.ayudasService.completarProgramadas();
   }
 }
