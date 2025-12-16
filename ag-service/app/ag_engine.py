@@ -32,13 +32,25 @@ def _construir_individuo(
     max_horas_por_familia: float | None,
 ) -> List[AyudaOut]:
     horas_asignadas: Dict[int, float] = {}
+    balance_actual: Dict[int, float] = {f.id: float(f.horasDadas - f.horasRecibidas) for f in familias}
     ayudas: List[AyudaOut] = []
+
+    # Si no llega límite desde el backend, estimar uno suave (promedio * 1.1) para evitar acaparamiento.
+    if max_horas_por_familia is None and familias:
+        total_horas = sum(sol.horasEstimadas for sol in solicitudes) if solicitudes else 0
+        max_horas_por_familia = (total_horas / len(familias)) * 1.1 if total_horas > 0 else None
 
     for sol in solicitudes:
         candidatos = _candidatos_para_solicitud(sol, familias)
         if not candidatos:
             continue
-        random.shuffle(candidatos)
+
+        # Ordenar por quien más debe “devolver” (balance más negativo) y con menos horas asignadas.
+        candidatos = sorted(
+            candidatos,
+            key=lambda c: (balance_actual.get(c.id, 0), horas_asignadas.get(c.id, 0)),
+        )
+
         elegido = None
         for cand in candidatos:
             horas_actuales = horas_asignadas.get(cand.id, 0)
@@ -46,6 +58,8 @@ def _construir_individuo(
                 continue
             elegido = cand
             break
+
+        # Si nadie cumple el límite, tomar al primero ordenado (al menos respeta balance).
         if elegido is None:
             elegido = candidatos[0]
 
@@ -61,6 +75,7 @@ def _construir_individuo(
             )
         )
         horas_asignadas[elegido.id] = horas_asignadas.get(elegido.id, 0) + sol.horasEstimadas
+        balance_actual[elegido.id] = balance_actual.get(elegido.id, 0) + sol.horasEstimadas
 
     return ayudas
 
@@ -72,6 +87,7 @@ def _fitness(
     pesos: Tuple[float, float, float],
     max_horas_por_familia: float | None,
 ) -> Tuple[float, DetalleFitness]:
+    # Peso de equilibrio priorizado para castigar concentración.
     peso_eq, peso_cov, peso_carga = pesos
     horas_dadas: Dict[int, float] = {f.id: float(f.horasDadas) for f in familias}
     horas_recibidas: Dict[int, float] = {f.id: float(f.horasRecibidas) for f in familias}
@@ -86,7 +102,8 @@ def _fitness(
             if ayuda.fecha < sol.fechaInicio or ayuda.fecha > sol.fechaFin:
                 penalizacion += 0.05
         if max_horas_por_familia is not None and horas_dadas.get(ayuda.origenId, 0) > max_horas_por_familia:
-            penalizacion += 0.05
+            # Penalización más fuerte por romper el límite duro de horas.
+            penalizacion += 0.15
 
     balances = []
     for f in familias:
@@ -116,6 +133,21 @@ def _fitness(
     else:
         max_horas = 0.0
         score_carga = 1.0
+
+    # Penalización dura si una familia concentra demasiadas horas o ayudas.
+    umbral_share_horas = 0.3  # 30% del total de horas permitido.
+    if total_horas > 0 and (max_horas / total_horas) > umbral_share_horas:
+        penalizacion += 0.25
+
+    ayudas_por_familia: Dict[int, int] = {}
+    for ayuda in individuo:
+        ayudas_por_familia[ayuda.origenId] = ayudas_por_familia.get(ayuda.origenId, 0) + 1
+
+    total_ayudas = sum(ayudas_por_familia.values())
+    if total_ayudas > 0:
+        max_ayudas = max(ayudas_por_familia.values())
+        if (max_ayudas / total_ayudas) > 0.35:  # 35% de las ayudas
+            penalizacion += 0.2
 
     denominador = max(peso_eq + peso_cov + peso_carga, 1e-6)
     fitness = (peso_eq * score_eq + peso_cov * score_cov + peso_carga * score_carga) / denominador
@@ -221,8 +253,11 @@ def optimizar_ayni(
             if fit > mejor_fit:
                 mejor_fit = fit
                 mejor_individuo = ind
-                mejor_detalle = det
-                mejor_detalle = DetalleFitness(**mejor_detalle.dict(), generaciones=gen + 1)
+                # det ya trae generaciones; evitamos pasarla dos veces.
+                mejor_detalle = DetalleFitness(
+                    **det.dict(exclude={"generaciones"}),
+                    generaciones=gen + 1,
+                )
 
         poblacion_eval.sort(key=lambda x: x[1], reverse=True)
         elite = poblacion_eval[0][0]

@@ -37,12 +37,7 @@ export class PlanAyniService {
         continue;
       }
 
-      const plan = await this.generarPlanConMicroservicio(familias, solicitudes).catch((err) => {
-        this.logger.warn(
-          `Fallo el microservicio AG para comunidad ${comunidad.id} (${err?.message ?? err}), usando heuristica local.`,
-        );
-        return this.generarPlanLocal(familias, solicitudes);
-      });
+      const plan = await this.generarPlanConMicroservicio(familias, solicitudes);
 
       planesComunidad.push({
         comunidadId: comunidad.id,
@@ -100,8 +95,8 @@ export class PlanAyniService {
     };
   }
 
-  async obtenerPlanActual() {
-    return this.ayudasService.findAll();
+  async obtenerPlanActual(comunidadId?: number) {
+    return this.ayudasService.findAll(comunidadId ? { comunidadId } : undefined);
   }
 
   /**
@@ -221,6 +216,15 @@ export class PlanAyniService {
       fechaFin: Date;
     }>,
   ) {
+    const totalHoras = solicitudes.reduce((acc, s) => acc + (s.horasEstimadas ?? 0), 0);
+    const maxHorasEnv = process.env.AG_MAX_HORAS ? Number(process.env.AG_MAX_HORAS) : null;
+    const maxHorasCalculado =
+      totalHoras && familias.length
+        ? Math.ceil((totalHoras / familias.length) * 1.1) // 10% por encima del promedio
+        : null;
+    const maxHorasPorFamilia =
+      maxHorasEnv && maxHorasEnv > 0 ? maxHorasEnv : maxHorasCalculado;
+
     const payload = {
       familias: familias.map((f) => ({
         id: f.id,
@@ -244,10 +248,10 @@ export class PlanAyniService {
         maxGeneraciones: 50,
         probCruzamiento: 0.7,
         probMutacion: 0.1,
-        pesoEquilibrio: 0.5,
-        pesoCobertura: 0.3,
+        pesoEquilibrio: 0.65,
+        pesoCobertura: 0.15,
         pesoCarga: 0.2,
-        maxHorasPorFamilia: null,
+        maxHorasPorFamilia,
       },
     };
 

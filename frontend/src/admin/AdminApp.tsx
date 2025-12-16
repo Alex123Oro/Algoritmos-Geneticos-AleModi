@@ -21,6 +21,7 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
   const [toast, setToast] = useState<string | null>(null);
 
   const [comunidades, setComunidades] = useState<Comunidad[]>([]);
+  const [comunidadId, setComunidadId] = useState<number | null>(null);
   const [familias, setFamilias] = useState<Familia[]>([]);
   const [familiaId, setFamiliaId] = useState<number | null>(null);
   const [solicitudes, setSolicitudes] = useState<SolicitudAyuda[]>([]);
@@ -41,27 +42,30 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
     try {
       const data = await api<Comunidad[]>('/comunidades');
       setComunidades(data);
-    } catch (err) {
-      showError((err as Error).message);
-    }
-  };
-
-  const loadFamilias = async () => {
-    try {
-      const data = await api<Familia[]>('/familias');
-      setFamilias(data);
-      if (!familiaId && data.length) {
-        setFamiliaId(data[0].id);
+      if (!comunidadId && data.length) {
+        setComunidadId(data[0].id);
       }
     } catch (err) {
       showError((err as Error).message);
     }
   };
 
-  const loadSolicitudes = async () => {
+  const loadFamilias = async (comId?: number | null) => {
+    try {
+      const url = comId ? `/familias?comunidadId=${comId}` : '/familias';
+      const data = await api<Familia[]>(url);
+      setFamilias(data);
+    } catch (err) {
+      showError((err as Error).message);
+    }
+  };
+
+  const loadSolicitudes = async (comId?: number | null) => {
     try {
       setBusy(true);
-      const data = await api<SolicitudAyuda[]>('/solicitudes');
+      const data = comId
+        ? await api<SolicitudAyuda[]>(`/solicitudes/comunidad/${comId}`)
+        : await api<SolicitudAyuda[]>('/solicitudes');
       setSolicitudes(data);
     } catch (err) {
       showError((err as Error).message);
@@ -70,10 +74,11 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
     }
   };
 
-  const loadAyudas = async () => {
+  const loadAyudas = async (comId?: number | null) => {
     try {
       setBusy(true);
-      const data = await api<AyudaAsignada[]>('/ayudas');
+      const url = comId ? `/ayudas?comunidadId=${comId}` : '/ayudas';
+      const data = await api<AyudaAsignada[]>(url);
       setAyudas(data);
     } catch (err) {
       showError((err as Error).message);
@@ -84,10 +89,23 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
 
   useEffect(() => {
     void loadComunidades();
-    void loadFamilias();
-    void loadSolicitudes();
-    void loadAyudas();
   }, []);
+
+  useEffect(() => {
+    if (comunidadId !== null) {
+      void loadFamilias(comunidadId);
+      void loadSolicitudes(comunidadId);
+      void loadAyudas(comunidadId);
+    }
+  }, [comunidadId]);
+
+  useEffect(() => {
+    if (!familiaId && familias.length) {
+      setFamiliaId(familias[0].id);
+    } else if (familiaId && !familias.find((f) => f.id === familiaId) && familias.length) {
+      setFamiliaId(familias[0].id);
+    }
+  }, [familiaId, familias]);
 
   const comunidadName = useMemo(
     () => Object.fromEntries(comunidades.map((c) => [c.id, c.nombre])),
@@ -123,7 +141,7 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
       const res = await api<PlanResponse>('/plan-ayni/generar', { method: 'POST' });
       setPlan(res);
       showToast('Plan generado');
-      await Promise.all([loadAyudas(), loadSolicitudes(), loadFamilias()]);
+      await Promise.all([loadAyudas(comunidadId), loadSolicitudes(comunidadId), loadFamilias(comunidadId)]);
     } catch (err) {
       showError((err as Error).message);
     } finally {
@@ -136,7 +154,7 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
       setBusy(true);
       await api<{ completadas: number }>('/ayudas/simulacion/completar-programadas', { method: 'POST' });
       showToast('Ayudas programadas marcadas como realizadas');
-      await Promise.all([loadAyudas(), loadFamilias()]);
+      await Promise.all([loadAyudas(comunidadId), loadFamilias(comunidadId)]);
     } catch (err) {
       showError((err as Error).message);
     } finally {
@@ -197,9 +215,15 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
         <AdminSidebar
           familias={familias}
           selectedId={familiaSeleccionada?.id ?? null}
+          comunidades={comunidades}
+          selectedComunidadId={comunidadId}
           comunidadName={comunidadName}
           view={view}
           onChangeView={setView}
+          onSelectComunidad={(id) => {
+            setComunidadId(id);
+            setPlan(null);
+          }}
           onSelectFamilia={setFamiliaId}
         />
 
@@ -212,8 +236,12 @@ function AdminApp({ onLogout }: { onLogout?: () => void; session?: Session }) {
             <PlanView
               ayudas={ayudas}
               plan={plan}
+              comunidadName={comunidadName[comunidadId ?? 0] ?? 'Todas'}
+              planSeleccionado={
+                comunidadId && plan ? plan.comunidades.find((c) => c.comunidadId === comunidadId) ?? null : null
+              }
               busy={busy}
-              onRefresh={() => void loadAyudas()}
+              onRefresh={() => void loadAyudas(comunidadId)}
               onGenerate={() => void generarPlan()}
               onSimulate={() => void completarProgramadas()}
               formatDate={formatDate}

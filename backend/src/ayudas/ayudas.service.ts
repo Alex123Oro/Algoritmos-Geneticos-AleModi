@@ -99,24 +99,32 @@ export class AyudasService implements OnModuleInit, OnModuleDestroy {
     familiaId?: number;
     rol?: 'origen' | 'destino' | 'ambos';
     estado?: string;
+    comunidadId?: number;
   }) {
-    const { familiaId, rol = 'ambos', estado } = params || {};
+    const { familiaId, rol = 'ambos', estado, comunidadId } = params || {};
 
-    const where: any = {};
+    const andFilters: any[] = [];
 
     if (estado) {
-      where.estado = estado;
+      andFilters.push({ estado });
+    }
+
+    if (comunidadId) {
+      // Todas las ayudas son intra-comunidad por validación; basta filtrar por origen.
+      andFilters.push({ origen: { comunidadId } });
     }
 
     if (familiaId) {
       if (rol === 'origen') {
-        where.origenId = familiaId;
+        andFilters.push({ origenId: familiaId });
       } else if (rol === 'destino') {
-        where.destinoId = familiaId;
+        andFilters.push({ destinoId: familiaId });
       } else {
-        where.OR = [{ origenId: familiaId }, { destinoId: familiaId }];
+        andFilters.push({ OR: [{ origenId: familiaId }, { destinoId: familiaId }] });
       }
     }
+
+    const where = andFilters.length ? { AND: andFilters } : undefined;
 
     return this.prisma.ayudaAsignada.findMany({
       where,

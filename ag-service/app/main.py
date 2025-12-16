@@ -1,3 +1,5 @@
+import logging
+import traceback
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,6 +11,8 @@ app = FastAPI(
     version="0.2.0",
     description="Microservicio para optimizar planes de ayni usando Algoritmos Geneticos.",
 )
+
+logger = logging.getLogger("ag-service")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,11 +32,15 @@ def optimizar_ayni_endpoint(payload: OptimizarAyniRequest):
 
     params = payload.parametros or ParametrosAG()
 
-    ayudas, fitness, detalle = optimizar_ayni(
-        familias=payload.familias,
-        solicitudes=payload.solicitudes,
-        parametros=params,
-    )
+    try:
+        ayudas, fitness, detalle = optimizar_ayni(
+            familias=payload.familias,
+            solicitudes=payload.solicitudes,
+            parametros=params,
+        )
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Error optimizando plan AG")
+        raise HTTPException(status_code=500, detail=f"AG error: {exc}") from exc
 
     return OptimizarAyniResponse(
         ayudas=ayudas,

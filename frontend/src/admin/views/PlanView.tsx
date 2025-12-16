@@ -4,6 +4,8 @@ import type { AyudaAsignada, PlanResponse } from '../../types';
 interface Props {
   ayudas: AyudaAsignada[];
   plan: PlanResponse | null;
+  planSeleccionado: PlanResponse['comunidades'][number] | null;
+  comunidadName: string;
   busy: boolean;
   onRefresh: () => void;
   onGenerate: () => void;
@@ -11,7 +13,17 @@ interface Props {
   formatDate: (value: string | Date) => string;
 }
 
-const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, onSimulate, formatDate }) => (
+const PlanView: React.FC<Props> = ({
+  ayudas,
+  plan,
+  planSeleccionado,
+  comunidadName,
+  busy,
+  onRefresh,
+  onGenerate,
+  onSimulate,
+  formatDate,
+}) => (
   <section>
     <div className="content-header">
       <div className="content-header-title">
@@ -23,7 +35,7 @@ const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, 
 
     <div className="flex-between mt-md">
       <div className="section-title">
-        <span className="icon-dot" /> Detalle de intercambios
+        <span className="icon-dot" /> Detalle de intercambios {comunidadName ? `· ${comunidadName}` : ''}
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn btn-outline" onClick={onRefresh}>
@@ -74,18 +86,20 @@ const PlanView: React.FC<Props> = ({ ayudas, plan, busy, onRefresh, onGenerate, 
       <div className="cards-grid mt-md">
         <div className="card">
           <h3>Ayudas creadas</h3>
-          <div className="card-main">{plan.totalAyudas}</div>
-          <div className="card-sub">Cantidad en el último plan generado.</div>
+          <div className="card-main">{planSeleccionado ? planSeleccionado.totalAyudas : plan.totalAyudas}</div>
+          <div className="card-sub">
+            {planSeleccionado ? 'Cantidad en esta comunidad.' : 'Cantidad en el último plan generado.'}
+          </div>
         </div>
-        {plan.comunidades.map((c) => (
-          <div className="card" key={c.comunidadId}>
-            <h3>Comunidad {c.comunidadId}</h3>
-            <div className="card-main">{c.totalAyudas} ayudas</div>
+        {planSeleccionado && (
+          <div className="card">
+            <h3>{comunidadName}</h3>
+            <div className="card-main">{planSeleccionado.totalAyudas} ayudas</div>
             <div className="card-sub">
-              Fitness: {typeof c.fitness === 'number' ? c.fitness.toFixed(3) : 'N/D'}
+              Fitness: {typeof planSeleccionado.fitness === 'number' ? planSeleccionado.fitness.toFixed(3) : 'N/D'}
             </div>
           </div>
-        ))}
+        )}
       </div>
     )}
   </section>

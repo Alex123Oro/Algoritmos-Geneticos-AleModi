@@ -46,11 +46,13 @@ export class AyudasController {
     @Query('familiaId') familiaId?: string,
     @Query('rol') rol?: 'origen' | 'destino' | 'ambos',
     @Query('estado') estado?: string,
+    @Query('comunidadId') comunidadId?: string,
   ) {
     return this.ayudasService.findAll({
       familiaId: familiaId ? Number(familiaId) : undefined,
       rol,
       estado,
+      comunidadId: comunidadId ? Number(comunidadId) : undefined,
     });
   }
 

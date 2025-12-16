@@ -1,4 +1,4 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
 import { PlanAyniService } from './plan-ayni.service';
 
 @Controller('plan-ayni')
@@ -11,7 +11,9 @@ export class PlanAyniController {
   }
 
   @Get('actual')
-  async actual() {
-    return this.planAyniService.obtenerPlanActual();
+  async actual(
+    @Query('comunidadId', new DefaultValuePipe(null), ParseIntPipe) comunidadId: number | null,
+  ) {
+    return this.planAyniService.obtenerPlanActual(comunidadId ?? undefined);
   }
 }

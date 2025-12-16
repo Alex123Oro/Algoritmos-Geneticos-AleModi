@@ -27,8 +27,9 @@ class ParametrosAG(BaseModel):
     maxGeneraciones: int = Field(50, ge=1)
     probCruzamiento: float = Field(0.7, ge=0.0, le=1.0)
     probMutacion: float = Field(0.1, ge=0.0, le=1.0)
-    pesoEquilibrio: float = Field(0.5, ge=0.0)
-    pesoCobertura: float = Field(0.3, ge=0.0)
+    # Se prioriza el equilibrio/carga para evitar concentración de ayudas.
+    pesoEquilibrio: float = Field(0.65, ge=0.0)
+    pesoCobertura: float = Field(0.15, ge=0.0)
     pesoCarga: float = Field(0.2, ge=0.0)
     maxHorasPorFamilia: Optional[float] = Field(None, ge=0.0)
     seed: Optional[int] = None
